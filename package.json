@@ -1,0 +1,27 @@
+{
+  "name": "node-service",
+  "version": "1.0.0",
+  "description": "A wrapper for spawning child processes as managed daemons in Node.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "prepack": "gulp tsc",
+    "postpack": "gulp clean"
+  },
+  "keywords": [
+    "service",
+    "daemon",
+    "node",
+    "gulp"
+  ],
+  "author": "Aaron Huggins",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/gulp-shell": "^0.7.0",
+    "@types/node": "^14.0.27",
+    "gulp": "^4.0.2",
+    "gulp-shell": "^0.8.0",
+    "ts-node": "^8.10.2",
+    "typescript": "^3.9.7"
+  }
+}
