@@ -1,15 +1,15 @@
-# Node Service
+# Managed Service Daemon
 
 A wrapper for spawning child processes as managed daemons in Node, with typescript definitions included.
 
 ## Usage
 
-Install via [NPM](https://www.npmjs.com/package/node-service) and require in your project.
+Install via [NPM](https://www.npmjs.com/package/managed-service-daemon) and require in your project.
 
 ```js
 const gulp = require('gulp')
 const shell = require('gulp-shell')
-const { Service } = require('node-service')
+const { Service } = require('managed-service-daemon')
 const workingDir = './.azurite'
 const azuriteBlob = new Service({
   name: 'azuriteBlob',
