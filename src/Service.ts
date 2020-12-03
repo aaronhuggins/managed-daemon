@@ -79,6 +79,8 @@ export class Service {
   /** Start the service.
    * @param {number} [wait] - Optional wait to pause after starting but before setting service state.
    */
+  async start (): Promise<void>
+  async start (wait: number): Promise<void>
   async start (wait: number = 0) {
     if (typeof wait !== 'number') wait = 0
     if (this.state === SERVICE_STATE.UNDEFINED) return
@@ -106,6 +108,8 @@ export class Service {
   /** Restart the service.
    * @param {number} [wait] - Optional wait to pause after starting but before setting service state.
    */
+  async restart (): Promise<void>
+  async restart (wait: number): Promise<void>
   async restart (wait: number = 0) {
     if (typeof wait !== 'number') wait = 0
     if (this.state === SERVICE_STATE.UNDEFINED) return
@@ -118,6 +122,8 @@ export class Service {
   /** Kill the service.
    * @param {string} [signal='SIGINT'] - The signal to send the service; see node's docs on `process.kill`.
    */
+  kill (): void
+  kill (signal: string | number): void
   kill (signal: string | number = 'SIGINT') {
     if (this.state === SERVICE_STATE.UNDEFINED) return
     if (this.pid !== null) {
@@ -126,5 +132,3 @@ export class Service {
     }
   }
 }
-
-// module.exports = { Service, SERVICE_EVENT, SERVICE_STATE, sleep }
