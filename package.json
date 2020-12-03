@@ -1,6 +1,6 @@
 {
   "name": "managed-service-daemon",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A wrapper for spawning child processes as managed daemons in Node.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -25,10 +25,10 @@
   "license": "MIT",
   "devDependencies": {
     "@types/gulp-shell": "^0.7.0",
-    "@types/node": "^14.0.27",
+    "@types/node": "^14.14.10",
     "gulp": "^4.0.2",
     "gulp-shell": "^0.8.0",
-    "ts-node": "^8.10.2",
-    "typescript": "^3.9.7"
+    "ts-node": "^9.1.0",
+    "typescript": "^4.1.2"
   }
 }
