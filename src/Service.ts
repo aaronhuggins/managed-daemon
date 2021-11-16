@@ -1,8 +1,31 @@
 import * as cp from 'child_process'
-import { ServiceOptions, ServiceEvent, ServiceState } from './Interfaces'
+import * as fs from 'fs'
 import { BIND_FUNCTIONS, SERVICE_STATE, SERVICE_EVENT } from './Constants'
+import type { ServiceOptions, ServiceEvent, ServiceState, LogFile } from './Interfaces'
+
+type ServicLogFile = LogFile & {
+  streamed: number
+  tail: number
+  retryCount: number
+}
 
 const noop = () => {}
+
+function logFileHandler (logFile?: string | LogFile): ServicLogFile {
+  const isLogFile = (val: any): val is LogFile => typeof logFile === 'object' && logFile !== null
+  const result: ServicLogFile = {
+    path: isLogFile(logFile) ? logFile.path : logFile,
+    print: isLogFile(logFile) ? (logFile.print ?? false) : false,
+    printTTL: isLogFile(logFile) ? (logFile.printTTL ?? 4) : 4,
+    streamed: 0,
+    tail: -1,
+    retryCount: 0
+  }
+
+  if (isLogFile(logFile) && typeof logFile.printTTL === 'number') result.print = true
+
+  return result
+}
 
 export const sleep = (milliseconds: number) => {
   return new Promise(resolve => setTimeout(resolve, milliseconds))
@@ -24,7 +47,7 @@ export const sleep = (milliseconds: number) => {
 export class Service {
   /** @param {ServiceOptions} options - The options for this service. */
   constructor (options: ServiceOptions) {
-    const { name, command, args, startWait } = options
+    const { name, command, args, startWait, logFile } = options
 
     if (command === undefined || command === null) {
       this.state = SERVICE_STATE.UNDEFINED
@@ -42,10 +65,13 @@ export class Service {
       this.command = command
       this.args = args
       this.startWait = startWait || 0
+      this.logFile = logFileHandler(logFile)
 
       delete this.options.name
       delete this.options.command
       delete this.options.args
+      delete this.options.startWait
+      delete this.options.logFile
 
       for (const key of this.events.keys()) {
         if (typeof this.options[key] === 'function') {
@@ -70,6 +96,11 @@ export class Service {
   private state: ServiceState
   private pid: number
   private options: ServiceOptions
+  private logFile: LogFile & {
+    streamed: number
+    tail: number
+    retryCount: number
+  }
   name: string
   command: string
   args: string[]
@@ -85,10 +116,12 @@ export class Service {
     if (typeof wait !== 'number') wait = 0
     if (this.state === SERVICE_STATE.UNDEFINED) return
     this.events.get(SERVICE_EVENT.onStart)()
+    const writable = typeof this.logFile.path === 'string' ? fs.openSync(this.logFile.path, 'w') : -1
     const spawn = cp.spawn(this.command, this.args, {
-      stdio: 'ignore',
-      ...this.options
+      ...this.options,
+      stdio: writable < 0 ? 'ignore' : ['ignore', writable, writable]
     })
+    this.printer()
     spawn.unref()
     this.pid = spawn.pid
     if (wait > 0 || this.startWait > 0) {
@@ -130,5 +163,42 @@ export class Service {
       process.kill(this.pid, signal)
       this.pid = null
     }
+  }
+
+  /** Start or stop the printer on demand. If no logfile was provided in constructor, then this is a no-op. */
+  print (start: boolean = true) {
+    if (typeof this.logFile.path !== 'string') return
+
+    this.logFile.print = start
+    if (this.logFile.print) this.printer()
+  }
+
+  private printer () {
+    if (typeof this.logFile.path !== 'string') return
+
+    const printLog = () => {
+      if (this.logFile.print) {
+        this.logFile.tail = this.logFile.streamed
+        const readable = fs.openSync(this.logFile.path, 'r')
+        const stream = fs.createReadStream('', {
+          fd: readable,
+          encoding: 'utf8',
+          start: this.logFile.streamed
+        })
+
+        stream.setMaxListeners(Infinity)
+        stream.on('data', function (chunk) {
+          this.logFile.streamed += chunk.length;
+        })
+        stream.pipe(process.stdout)
+
+        if (this.logFile.retryCount >= this.logFile.printTTL) return
+        if (this.logFile.streamed > this.logFile.tail) this.logFile.retryCount = 0
+        if (this.logFile.streamed === this.logFile.tail) this.logFile.retryCount += 1
+        setTimeout(() => printLog(), 1000)
+      }
+    }
+
+    setTimeout(() => printLog(), 1000)
   }
 }

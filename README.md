@@ -26,3 +26,7 @@ exports.mocha = async function mocha () {
 
 exports.test = gulp.series(azuriteBlob.start, exports.mocha, azuriteBlob.stop)
 ```
+
+The Service options also accept all non-overlapping `child_process.spawn` options; overlapping options would include `stdio`, for example.
+
+Aditional options specific to the Service class can be viewed in the [TypeScript code](./src/Interfaces.ts).

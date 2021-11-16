@@ -1,4 +1,4 @@
-import { ServiceState, ServiceEvent } from './Interfaces'
+import type { ServiceState, ServiceEvent } from './Interfaces'
 
 export const BIND_FUNCTIONS = ['start', 'stop', 'restart', 'kill']
 

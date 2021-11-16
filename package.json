@@ -1,6 +1,6 @@
 {
   "name": "managed-service-daemon",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "A wrapper for spawning child processes as managed daemons in Node.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,18 +17,18 @@
     "node",
     "gulp"
   ],
-  "author": "Aaron Huggins",
+  "author": "Aaron Huggins <aaron.huggins@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ahuggins-nhs/managed-service-daemon.git"
+    "url": "https://github.com/aaronhuggins/managed-service-daemon.git"
   },
   "license": "MIT",
   "devDependencies": {
     "@types/gulp-shell": "^0.7.0",
-    "@types/node": "^14.14.10",
+    "@types/node": "^16.11.7",
     "gulp": "^4.0.2",
     "gulp-shell": "^0.8.0",
-    "ts-node": "^9.1.0",
-    "typescript": "^4.1.2"
+    "ts-node": "^10.4.0",
+    "typescript": "^4.4.4"
   }
 }
