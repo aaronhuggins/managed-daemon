@@ -187,7 +187,7 @@ export class Service {
         })
 
         stream.setMaxListeners(Infinity)
-        stream.on('data', function (chunk) {
+        stream.on('data', (chunk) => {
           this.logFile.streamed += chunk.length;
         })
         stream.pipe(process.stdout)
