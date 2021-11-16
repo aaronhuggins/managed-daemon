@@ -107,6 +107,16 @@ export class Service {
   private startWait: number
   private events: Map<ServiceEvent, Function>
 
+  /** Get the current state of the service. */
+  getState (): ServiceState {
+    return this.state
+  }
+
+  /** Get the current process ID of the service. */
+  getPID (): number {
+    return this.pid
+  }
+
   /** Start the service.
    * @param {number} [wait] - Optional wait to pause after starting but before setting service state.
    */
@@ -120,6 +130,14 @@ export class Service {
     const spawn = cp.spawn(this.command, this.args, {
       ...this.options,
       stdio: writable < 0 ? 'ignore' : ['ignore', writable, writable]
+    })
+    spawn.on('close', () => {
+      /** Avoid setting if service alrady killed itself. */
+      if (this.state !== SERVICE_STATE.STOPPED) {
+        this.pid = null
+        this.state = SERVICE_STATE.STOPPED
+        this.events.get(SERVICE_EVENT.onStop)()
+      }
     })
     this.printer()
     spawn.unref()
