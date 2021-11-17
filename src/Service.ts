@@ -125,6 +125,7 @@ export class Service {
   async start (wait: number = 0) {
     if (typeof wait !== 'number') wait = 0
     if (this.state === SERVICE_STATE.UNDEFINED) return
+    this.resetLogFileStats()
     this.events.get(SERVICE_EVENT.onStart)()
     const writable = typeof this.logFile.path === 'string' ? fs.openSync(this.logFile.path, 'w') : -1
     const spawn = cp.spawn(this.command, this.args, {
@@ -189,6 +190,12 @@ export class Service {
 
     this.logFile.print = start
     if (this.logFile.print) this.printer()
+  }
+
+  private resetLogFileStats () {
+    this.logFile.retryCount = 0
+    this.logFile.streamed = 0
+    this.logFile.tail = -1
   }
 
   private printer () {
