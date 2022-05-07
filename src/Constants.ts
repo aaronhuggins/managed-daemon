@@ -1,6 +1,6 @@
-import type { ServiceState, ServiceEvent } from './Interfaces'
+import type { ServiceState, ServiceEvent } from './Interfaces.ts'
 
-export const BIND_FUNCTIONS = ['start', 'stop', 'restart', 'kill']
+export const BIND_FUNCTIONS: ['start', 'stop', 'restart', 'kill'] = ['start', 'stop', 'restart', 'kill']
 
 export const SERVICE_STATE: Record<ServiceState, ServiceState> = {
   READY: 'READY',

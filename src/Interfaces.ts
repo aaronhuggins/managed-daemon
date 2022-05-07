@@ -1,5 +1,3 @@
-import type { SpawnOptions } from 'child_process'
-
 export interface LogFile {
   /** The path to a log file to write stdout and stderr. */
   path: string
@@ -13,9 +11,9 @@ export interface LogFile {
   printTTL?: number
 }
 
-type OmitSpawnOptions = 'stdio' | 'argv0' | 'serialization' | 'cwd'
+type RunOptions = Omit<(Parameters<typeof Deno.run>)[0], 'cmd' | 'cwd' | 'stdin' | 'stdout' | 'stderr'>
 
-export interface ServiceOptions extends Omit<SpawnOptions, OmitSpawnOptions> {
+export interface ServiceOptions extends RunOptions {
   /** The name of an executable on the system PATH or an absolute path to one. */
   command: string
   /** An array of arguments to pass to the executable. */
@@ -29,13 +27,13 @@ export interface ServiceOptions extends Omit<SpawnOptions, OmitSpawnOptions> {
   /** Path to a log file; will be overwritten on each launch. */
   logFile?: string | LogFile
   /** A callback function which runs as soon as the service is ready. */
-  onReady?: Function
+  onReady?: () => void | Promise<void>
   /** A callback function which runs immediately before starting the executable. */
-  onStart?: Function
+  onStart?: () => void | Promise<void>
   /** A callback function which runs immediately after stopping the executable. */
-  onStop?: Function
+  onStop?: () => void | Promise<void>
   /** A callback function which runs immediately after stopping the executable but before starting. */
-  onRestart?: Function
+  onRestart?: () => void | Promise<void>
 }
 
 export type ServiceState = 'READY' | 'STARTED' | 'STOPPED' | 'RESTARTING' | 'UNDEFINED'

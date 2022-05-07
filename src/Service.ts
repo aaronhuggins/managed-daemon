@@ -1,9 +1,11 @@
-import * as cp from 'child_process'
-import * as fs from 'fs'
-import { BIND_FUNCTIONS, SERVICE_STATE, SERVICE_EVENT } from './Constants'
-import type { ServiceOptions, ServiceEvent, ServiceState, LogFile } from './Interfaces'
+// deno-lint-ignore-file no-explicit-any no-inferrable-types
+import { readableStreamFromReader } from 'https://deno.land/std@0.137.0/streams/conversion.ts'
+import { BIND_FUNCTIONS, SERVICE_STATE, SERVICE_EVENT } from './Constants.ts'
+import { sleep } from './sleep.ts'
+import type { ServiceOptions, ServiceEvent, ServiceState, LogFile } from './Interfaces.ts'
 
-type ServicLogFile = LogFile & {
+type ServicLogFile = Omit<LogFile, 'path'> & {
+  path?: string
   streamed: number
   tail: number
   retryCount: number
@@ -12,7 +14,7 @@ type ServicLogFile = LogFile & {
 const noop = () => {}
 
 function logFileHandler (logFile?: string | LogFile): ServicLogFile {
-  const isLogFile = (val: any): val is LogFile => typeof logFile === 'object' && logFile !== null
+  const isLogFile = (val: any): val is LogFile => typeof val === 'object' && val !== null
   const result: ServicLogFile = {
     path: isLogFile(logFile) ? logFile.path : logFile,
     print: isLogFile(logFile) ? (logFile.print ?? false) : false,
@@ -25,10 +27,6 @@ function logFileHandler (logFile?: string | LogFile): ServicLogFile {
   if (isLogFile(logFile) && typeof logFile.printTTL === 'number') result.print = true
 
   return result
-}
-
-export const sleep = (milliseconds: number) => {
-  return new Promise(resolve => setTimeout(resolve, milliseconds))
 }
 
 /** Options for a service instance.
@@ -48,39 +46,44 @@ export class Service {
   /** @param {ServiceOptions} options - The options for this service. */
   constructor (options: ServiceOptions) {
     const { name, command, args, startWait, logFile } = options
+    this.events = new Map([
+      [SERVICE_EVENT.onReady, noop],
+      [SERVICE_EVENT.onStart, noop],
+      [SERVICE_EVENT.onStop, noop],
+      [SERVICE_EVENT.onRestart, noop]
+    ])
+    this.options = { ...options }
+    this.name = name || command
+    this.command = command
+    this.args = args ?? []
+    this.startWait = startWait || 0
+    this.logFile = logFileHandler(logFile)
+    this.tid = null
+    this.rid = null
 
     if (command === undefined || command === null) {
       this.state = SERVICE_STATE.UNDEFINED
       this.pid = null
     } else {
       this.pid = null
-      this.events = new Map([
-        [SERVICE_EVENT.onReady, noop],
-        [SERVICE_EVENT.onStart, noop],
-        [SERVICE_EVENT.onStop, noop],
-        [SERVICE_EVENT.onRestart, noop]
-      ])
-      this.options = { ...options }
-      this.name = name || command
-      this.command = command
-      this.args = args
-      this.startWait = startWait || 0
-      this.logFile = logFileHandler(logFile)
 
       delete this.options.name
+      // @ts-ignore: Delete the non-optional member so that options can be passed anyway.
       delete this.options.command
       delete this.options.args
       delete this.options.startWait
       delete this.options.logFile
 
       for (const key of this.events.keys()) {
-        if (typeof this.options[key] === 'function') {
-          this.events.set(key, this.options[key])
+        const func = this.options[key]
+        if (typeof func === 'function') {
+          this.events.set(key, func)
           delete this.options[key]
         }
       }
 
       for (const func of BIND_FUNCTIONS) {
+        // @ts-ignore: This is actually explicit; there is no ambiguity here.
         this[func] = this[func].bind(this)
 
         Object.defineProperty(this[func], 'name', {
@@ -89,23 +92,22 @@ export class Service {
       }
 
       this.state = SERVICE_STATE.READY
-      this.events.get(SERVICE_EVENT.onReady)()
+      this.events.get(SERVICE_EVENT.onReady)?.()
     }
   }
 
   private state: ServiceState
-  private pid: number
+  private pid: number | null
+  private tid: number | null
+  private rid: number | null
+  private proc?: Deno.Process
   private options: ServiceOptions
-  private logFile: LogFile & {
-    streamed: number
-    tail: number
-    retryCount: number
-  }
+  private logFile: ServicLogFile
   name: string
   command: string
   args: string[]
   private startWait: number
-  private events: Map<ServiceEvent, Function>
+  private events: Map<ServiceEvent, () => void | Promise<void>>
 
   /** Get the current state of the service. */
   getState (): ServiceState {
@@ -114,7 +116,7 @@ export class Service {
 
   /** Get the current process ID of the service. */
   getPID (): number {
-    return this.pid
+    return this.pid ?? NaN
   }
 
   /** Start the service.
@@ -126,22 +128,27 @@ export class Service {
     if (typeof wait !== 'number') wait = 0
     if (this.state === SERVICE_STATE.UNDEFINED) return
     this.resetLogFileStats()
-    this.events.get(SERVICE_EVENT.onStart)()
-    const writable = typeof this.logFile.path === 'string' ? fs.openSync(this.logFile.path, 'w') : -1
-    const spawn = cp.spawn(this.command, this.args, {
+    this.events.get(SERVICE_EVENT.onStart)?.()
+    const writable = typeof this.logFile.path === 'string' ? Deno.openSync(this.logFile.path, { create: true, write: true }).rid : -1
+    const spawn = this.proc = Deno.run({
+      cmd: [this.command, ...this.args],
       ...this.options,
-      stdio: writable < 0 ? 'ignore' : ['ignore', writable, writable]
+      stderr: writable < 0 ? 'null' : writable,
+      stdin: 'null',
+      stdout: writable < 0 ? 'null' : writable,
     })
-    spawn.on('close', () => {
+
+    if (writable > 0) this.rid = writable
+
+    spawn.status().then(() => {
       /** Avoid setting if service alrady killed itself. */
       if (this.state !== SERVICE_STATE.STOPPED) {
-        this.pid = null
+        this.kill()
         this.state = SERVICE_STATE.STOPPED
-        this.events.get(SERVICE_EVENT.onStop)()
+        this.events.get(SERVICE_EVENT.onStop)?.()
       }
     })
     this.printer()
-    spawn.unref()
     this.pid = spawn.pid
     if (wait > 0 || this.startWait > 0) {
       await sleep(wait === 0 ? this.startWait : wait)
@@ -150,11 +157,18 @@ export class Service {
   }
 
   /** Stop the service. */
-  async stop () {
-    if (this.state === SERVICE_STATE.UNDEFINED) return
-    this.kill()
-    this.state = SERVICE_STATE.STOPPED
-    this.events.get(SERVICE_EVENT.onStop)()
+  stop () {
+    return new Promise<void>((resolve, reject) => {
+      try {
+        if (this.state === SERVICE_STATE.UNDEFINED) return
+        this.kill()
+        this.state = SERVICE_STATE.STOPPED
+        this.events.get(SERVICE_EVENT.onStop)?.()
+        resolve()
+      } catch (error) {
+        reject(error)
+      }
+    })
   }
 
   /** Restart the service.
@@ -162,25 +176,42 @@ export class Service {
    */
   async restart (): Promise<void>
   async restart (wait: number): Promise<void>
-  async restart (wait: number = 0) {
-    if (typeof wait !== 'number') wait = 0
-    if (this.state === SERVICE_STATE.UNDEFINED) return
-    this.state = SERVICE_STATE.RESTARTING
-    this.kill()
-    this.events.get(SERVICE_EVENT.onRestart)()
-    await this.start(wait)
+  restart (wait: number = 1) {
+    return new Promise<void>((resolve, reject) => {
+      try {
+        if (typeof wait !== 'number') wait = 1
+        if (this.state === SERVICE_STATE.UNDEFINED) return
+        this.state = SERVICE_STATE.RESTARTING
+        this.kill()
+        this.events.get(SERVICE_EVENT.onRestart)?.()
+        resolve(this.start(wait))
+      } catch (error) {
+        reject(error)
+      }
+    })
   }
 
   /** Kill the service.
    * @param {string} [signal='SIGINT'] - The signal to send the service; see node's docs on `process.kill`.
    */
   kill (): void
-  kill (signal: string | number): void
-  kill (signal: string | number = 'SIGINT') {
+  kill (signal: Deno.Signal): void
+  kill (signal: Deno.Signal = 'SIGINT') {
     if (this.state === SERVICE_STATE.UNDEFINED) return
     if (this.pid !== null) {
-      process.kill(this.pid, signal)
+      try {
+        Deno.kill(this.pid, signal)
+      } catch (_error) { /* Gracefully ignore a not found or access issue. */ }
       this.pid = null
+    }
+    this.proc?.close()
+    if (this.tid !== null) {
+      clearTimeout(this.tid)
+      this.tid = null
+    }
+    if (this.rid !== null) {
+      Deno.close(this.rid)
+      this.rid = null
     }
   }
 
@@ -204,26 +235,27 @@ export class Service {
     const printLog = () => {
       if (this.logFile.print) {
         this.logFile.tail = this.logFile.streamed
-        const readable = fs.openSync(this.logFile.path, 'r')
-        const stream = fs.createReadStream('', {
-          fd: readable,
-          encoding: 'utf8',
-          start: this.logFile.streamed
-        })
+        const readable = Deno.openSync(this.logFile.path as string, { read: true })
 
-        stream.setMaxListeners(Infinity)
-        stream.on('data', (chunk) => {
-          this.logFile.streamed += chunk.length;
-        })
-        stream.pipe(process.stdout)
+        readable.seekSync(this.logFile.streamed, Deno.SeekMode.Start)
 
-        if (this.logFile.retryCount >= this.logFile.printTTL) return
+        const stream = readableStreamFromReader(readable)
+        const reader = stream.getReader()
+        const callback = ({ done, value }: ReadableStreamReadResult<Uint8Array>) => {
+          this.logFile.streamed += (value?.byteLength ?? 0)
+          if (value) Deno.stdout.write(value)
+          if (!done) reader.read().then(callback)
+        }
+
+        reader.read().then(callback)
+
+        if (this.logFile.retryCount >= (this.logFile.printTTL ?? 4)) return
         if (this.logFile.streamed > this.logFile.tail) this.logFile.retryCount = 0
         if (this.logFile.streamed === this.logFile.tail) this.logFile.retryCount += 1
-        setTimeout(() => printLog(), 1000)
+        if ([SERVICE_STATE.STARTED, SERVICE_STATE.READY].includes(this.state)) this.tid = setTimeout(() => printLog(), 1000)
       }
     }
 
-    setTimeout(() => printLog(), 1000)
+    printLog()
   }
 }
